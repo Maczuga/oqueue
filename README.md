@@ -4,4 +4,4 @@ This will be visible by all players that use the addon even if they're not from 
 
 ## Currently released and avaliable
 
-Please report all bugs [here](https://github.com/Tauri-WoW-Community-Devs/oQueue-Tauri/issues) in a coherent manner, so they can be fixed as fast as possible.
+Please report all bugs [here](https://github.com/Maczuga/oqueue/issues) in a coherent manner, so they can be fixed as fast as possible.
