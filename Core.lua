@@ -18,7 +18,7 @@ local OQ_MSGHEADER = OQ_HEADER .. ','
 local OQ_FLD_TO = '#to:'
 local OQ_FLD_FROM = '#fr:'
 local OQ_FLD_REALM = '#rlm:'
-local OQ_REALM_CHANNEL = 'x.oqueue'
+local OQ_XREALM_CHANNEL = 'x.oqueue'
 local OQ_TTL = 4
 local OQ_PREMADE_STAT_LIFETIME = 5 * 60 -- 5 minutes
 local OQ_GROUP_RECOVERY_TM = 5 * 60 -- 5 minutes
@@ -870,7 +870,7 @@ end
 
 function oq.oq_off()
     oq.toon.disabled = true
-    oq.oqgeneral_leave()
+    -- oq.oqgeneral_leave()
     oq.remove_all_premades()
     oq.reset_stats()
     print(OQ.DISABLED)
@@ -1641,30 +1641,15 @@ function oq.raid_init()
     oq.procs_no_raid()
 end
 
-function oq.channel_isregistered(chan_name)
-    local n = strlower(chan_name)
-    return oq.channels[n]
-end
-
-function oq.buildChannelList(...)
-    local tbl = tbl.new()
-
-    for i = 1, select('#', ...), 2 do
-        local id, name = select(i, ...)
-        tbl[id] = strlower(name)
-    end
-
-    return tbl
-end
-
-function oq.channel_join(chan_name, pword)
+function oq.channel_join(chan_name)
     local n = strlower(chan_name)
     if
-        ((n == OQ_REALM_CHANNEL and oq._inside_instance and not oq.iam_raid_leader()) or
+        ((n == OQ_XREALM_CHANNEL and oq._inside_instance and not oq.iam_raid_leader()) or
             oq._oqgeneral_initialized == nil)
      then
         return nil
     end
+
     if (oq.channels[n] == nil) then
         oq.channels[n] = tbl.new()
         oq.channels[n].id = 0
@@ -1672,15 +1657,16 @@ function oq.channel_join(chan_name, pword)
 
     local id, chname = GetChannelName(n)
     if (chname == nil) then
-        JoinTemporaryChannel(n, pword)
+        oq.log(true, "JOIN CHANNEL: ", chan_name)
+        JoinChannelByName(n)
         id, chname, instance_id = GetChannelName(n)
         if (id < 2) then
+            oq.log(true, "LEAVE CHANNEL (id < 2): ", chan_name)
             LeaveChannelByName(chname)
             return nil
         end
     end
     oq.channels[n].id = id
-    oq.channels[n].pword = pword
     return 1
 end
 
@@ -1699,7 +1685,7 @@ function oq.hook_roster_update(chan_name)
 end
 
 function oq.check_oqgeneral_lockdown()
-    local n, index = oq.n_channel_members(OQ_REALM_CHANNEL)
+    local n, index = oq.n_channel_members(OQ_XREALM_CHANNEL)
     _oqgeneral_count = n
     if (n < MAX_OQGENERAL_TALKERS) or (n == 0) then
         -- no restrictions
@@ -1749,6 +1735,7 @@ function oq.n_channel_members(chan_name)
 end
 
 function oq.channel_leave(chan_name)
+    oq.log(true, "LEFT CHANNEL: ", chan_name)
     local n = strlower(chan_name)
     LeaveChannelByName(n)
     oq.channels[n] = nil
@@ -1792,8 +1779,8 @@ function oq.oqgeneral_join()
     if (oq._inside_instance) and (not oq.iam_raid_leader()) then
         return
     end
-    if (oq.channel_join(OQ_REALM_CHANNEL) == 1) then
-        oq.timer('hook_roster_update', 5, oq.hook_roster_update, true, OQ_REALM_CHANNEL) -- will repeat until channel joined
+    if (oq.channel_join(OQ_XREALM_CHANNEL) == 1) then
+        oq.timer('hook_roster_update', 5, oq.hook_roster_update, true, OQ_XREALM_CHANNEL) -- will repeat until channel joined
         oq.timer('chk_OQGeneralLockdown', 30, oq.check_oqgeneral_lockdown, true) -- will check capacity every 30 seconds
     else
         oq._oqgeneral_initialized = nil
@@ -1822,7 +1809,7 @@ end
 
 function oq.oqgeneral_leave()
     _oqgeneral_lockdown = true -- lock the door.  the restriction will life once joined and cleared
-    oq.channel_leave(OQ_REALM_CHANNEL)
+    oq.channel_leave(OQ_XREALM_CHANNEL)
     oq.timer('chk_OQGeneralLockdown', 0, nil)
 end
 
@@ -1830,7 +1817,7 @@ function oq.SendOQChannelMessage(msg)
     if (_oqgeneral_lockdown) then
         return -- too many ppl in oqgeneral, voluntary mute engaged
     end
-    oq.SendChannelMessage(OQ_REALM_CHANNEL, msg)
+    oq.SendChannelMessage(OQ_XREALM_CHANNEL, msg)
 end
 
 function oq.iam_in_a_party()
@@ -3313,9 +3300,9 @@ function oq.check_bg_status()
         oq._boss_fight = nil
         oq._wiped = nil
         oq._instance_faction = nil
-        if (not oq.iam_raid_leader()) then
-            oq.timer_oneshot(5, oq.oqgeneral_leave)
-        end
+        -- if (not oq.iam_raid_leader()) then
+        --     oq.timer_oneshot(5, oq.oqgeneral_leave)
+        -- end
         if (oq._instance_type ~= 'pvp') then
             if
                 (oq.raid.raid_token ~= nil and oq.raid.type == OQ.TYPE_RAID) or
@@ -4737,7 +4724,7 @@ end
 
 function oq.get_nConnections()
     -- update the label on tab 5
-    local nlocals = oq.n_channel_members(OQ_REALM_CHANNEL)
+    local nlocals = oq.n_channel_members(OQ_XREALM_CHANNEL)
     if (nlocals > 0) then
         nlocals = nlocals - 1 -- subtract player
     end
@@ -5065,7 +5052,7 @@ function oq.announce_relay(m)
     end
 
     -- send to general channel
-    if (_inc_channel ~= OQ_REALM_CHANNEL) and (oq._banned == nil) then
+    if (_inc_channel ~= OQ_XREALM_CHANNEL) and (oq._banned == nil) then
         oq.SendOQChannelMessage(m)
     end
 
@@ -13052,7 +13039,7 @@ function oq.on_proxy_invite(group_id, slot_, enc_data_, req_token_)
     if (not oq.iam_party_leader()) or (group_id == nil) then
         return
     end
-    if (oq.raid.raid_token == nil) or (_source == 'bnfinvite') or (_source == OQ_REALM_CHANNEL) or (_source == 'party') then
+    if (oq.raid.raid_token == nil) or (_source == 'bnfinvite') or (_source == OQ_XREALM_CHANNEL) or (_source == 'party') then
         return
     end
     if (not oq.iam_raid_leader()) and (oq.raid.type ~= OQ.TYPE_BG) then
@@ -14017,7 +14004,7 @@ end
 
 OQ.MAX_ORIGINALS = 5
 function oq.bad_source(raid_tok)
-    if ((_source ~= OQ_REALM_CHANNEL) and (_source ~= 'addon')) or (_hop < OQ_TTL) or (oq._sender == '#backup') then
+    if ((_source ~= OQ_XREALM_CHANNEL) and (_source ~= 'addon')) or (_hop < OQ_TTL) or (oq._sender == '#backup') then
         return
     end
     local now = oq.utc_time()
@@ -17480,16 +17467,11 @@ function oq.on_channel_msg(...)
     end
 
     local chan_name = strlower(_arg[9])
-    if (not oq.channel_isregistered(chan_name)) then
-        oq.post_process()
-        return
-    end
-
-    if (chan_name == OQ_REALM_CHANNEL) then
+    if (chan_name == OQ_XREALM_CHANNEL) then
         local name, realm = strsplit('-', sender)
 
-        _inc_channel = OQ_REALM_CHANNEL
-        _source = OQ_REALM_CHANNEL
+        _inc_channel = OQ_XREALM_CHANNEL
+        _source = OQ_XREALM_CHANNEL
         oq._sender = sender
         oq._sender_name = name
         oq._sender_realm = realm
@@ -17539,12 +17521,12 @@ end
 function oq.forward_msg(source, sender, msg_type, _, msg)
     -- no relaying while in a BG.  BATTLEGROUND msgs are BG-wide, everything else stops here
     --
-    if _msg_id == 'p8' and _inc_channel ~= OQ_REALM_CHANNEL and my_slot ~= 1 and oq._raid_token ~= oq.raid.raid_token then
+    if _msg_id == 'p8' and _inc_channel ~= OQ_XREALM_CHANNEL and my_slot ~= 1 and oq._raid_token ~= oq.raid.raid_token then
         oq.SendOQChannelMessage(msg)
         if (_hop == 0) then
             return
         end
-    elseif _msg_id == 'p8' and _inc_channel ~= OQ_REALM_CHANNEL and _hop == 0 and _source == 'bnet' then
+    elseif _msg_id == 'p8' and _inc_channel ~= OQ_XREALM_CHANNEL and _hop == 0 and _source == 'bnet' then
         oq.SendOQChannelMessage(msg)
         return
     end
@@ -17751,8 +17733,8 @@ function oq.recover_premades()
         end
         if (f == oq.player_faction) then
             if (tm) and (msg) and ((now - tm) < dt) then
-                _inc_channel = OQ_REALM_CHANNEL
-                _source = OQ_REALM_CHANNEL
+                _inc_channel = OQ_XREALM_CHANNEL
+                _source = OQ_XREALM_CHANNEL
                 oq._sender = '#backup'
                 _ok2relay = nil
                 oq.process_msg(oq._sender, msg)
@@ -17941,7 +17923,7 @@ function oq.process_msg(sender, msg)
     if ((token ~= 'W1') and oq.token_was_seen(token)) then
         return
     end
-    if ((token == 'W1') and (_source == OQ_REALM_CHANNEL)) then
+    if ((token == 'W1') and (_source == OQ_XREALM_CHANNEL)) then
         -- these messages cannot come from OQgen
         return
     elseif (token == 'W1') then
@@ -18062,7 +18044,7 @@ function oq.process_msg(sender, msg)
         if ((_msg_type == 'A') and (_hop > 0) and (_hop <= OQ_TTL)) then
             -- elseif (_msg_type == 'A') and (_hop == 0) and (_source == 'bnet') then
             --     _ok2relay = true
-            if (_source ~= OQ_REALM_CHANNEL) then
+            if (_source ~= OQ_XREALM_CHANNEL) then
                 -- only decrement when crossing realms, not crossing the realm channel
                 _vars[4] = _hop - 1
             end
@@ -18984,11 +18966,11 @@ function oq.player_flags_changed(unitId)
 
     if (UnitIsAFK('player') and oq._isAfk == nil) then
         oq._isAfk = true
-        oq.oqgeneral_leave()
+        -- oq.oqgeneral_leave()
         oq.oq_off()
     elseif (oq._isAfk) then
         oq._isAfk = nil
-        oq.oqgeneral_join()
+        -- oq.oqgeneral_join()
         oq.oq_on()
     end
 end
@@ -19396,7 +19378,7 @@ end
 
 function oq.on_logout()
     -- leave channels
-    oq.channel_leave(OQ_REALM_CHANNEL)
+    oq.channel_leave(OQ_XREALM_CHANNEL)
 
     oq.log(nil, 'logging out')
     -- hang onto group data if still in an OQ_group (may come back)
